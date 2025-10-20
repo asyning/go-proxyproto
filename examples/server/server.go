@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"log"
 	"net"
 
@@ -33,4 +34,9 @@ func main() {
 		log.Fatal("couldn't retrieve remote address")
 	}
 	log.Printf("remote address: %q", conn.RemoteAddr().String())
+	bs, err := io.ReadAll(conn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("content: %s", string(bs))
 }

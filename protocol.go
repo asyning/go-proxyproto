@@ -52,7 +52,6 @@ type Conn struct {
 	readErr           error
 	conn              net.Conn
 	bufReader         *bufio.Reader
-	reader            io.Reader
 	header            *Header
 	ProxyHeaderPolicy Policy
 	Validate          Validator
@@ -154,12 +153,13 @@ func NewConn(conn net.Conn, opts ...func(*Conn)) *Conn {
 	// For v1 the header length is at most 108 bytes.
 	// For v2 the header length is at most 52 bytes plus the length of the TLVs.
 	// We use 256 bytes to be safe.
-	const bufSize = 256
-	br := bufio.NewReaderSize(conn, bufSize)
+	//const bufSize = 256
+	//br := bufio.NewReaderSize(conn, bufSize)
+
+	br := bufioReaderPool.Get(conn)
 
 	pConn := &Conn{
 		bufReader: br,
-		reader:    io.MultiReader(br, conn),
 		conn:      conn,
 	}
 
@@ -180,8 +180,11 @@ func (p *Conn) Read(b []byte) (int, error) {
 	if p.readErr != nil {
 		return 0, p.readErr
 	}
+	return p.bufReader.Read(b)
+}
 
-	return p.reader.Read(b)
+func (p *Conn) Peek(n int) ([]byte, error) {
+	return p.bufReader.Peek(n)
 }
 
 // Write wraps original conn.Write
@@ -191,6 +194,10 @@ func (p *Conn) Write(b []byte) (int, error) {
 
 // Close wraps original conn.Close
 func (p *Conn) Close() error {
+	if p.bufReader != nil {
+		bufioReaderPool.Put(p.bufReader)
+		p.bufReader = nil
+	}
 	return p.conn.Close()
 }
 
@@ -386,4 +393,32 @@ func (p *Conn) WriteTo(w io.Writer) (int64, error) {
 	}
 
 	return n, nil
+}
+
+var (
+	bufioReaderPool = newBufioReaderPool()
+)
+
+type bufioReaderPoolT struct {
+	bufferPool sync.Pool
+}
+
+func newBufioReaderPool() *bufioReaderPoolT {
+	return &bufioReaderPoolT{
+		bufferPool: sync.Pool{
+			New: func() any {
+				return bufio.NewReader(nil)
+			},
+		},
+	}
+}
+func (bf *bufioReaderPoolT) Get(r io.Reader) *bufio.Reader {
+	br := bf.bufferPool.Get().(*bufio.Reader)
+	br.Reset(r)
+	return br
+}
+
+func (bf *bufioReaderPoolT) Put(br *bufio.Reader) {
+	br.Reset(nil)
+	bf.bufferPool.Put(br)
 }
