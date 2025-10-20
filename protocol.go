@@ -356,23 +356,6 @@ func (p *Conn) readHeader() error {
 	return err
 }
 
-// ReadFrom implements the io.ReaderFrom ReadFrom method
-func (p *Conn) ReadFrom(r io.Reader) (int64, error) {
-	if rf, ok := p.conn.(io.ReaderFrom); ok {
-		return rf.ReadFrom(r)
-	}
-	return io.Copy(p.conn, r)
-}
-
-// WriteTo implements io.WriterTo
-func (p *Conn) WriteTo(w io.Writer) (int64, error) {
-	p.once.Do(func() { p.readErr = p.readHeader() })
-	if p.readErr != nil {
-		return 0, p.readErr
-	}
-	return p.bufReader.WriteTo(w)
-}
-
 var (
 	bufioReaderPool = newBufioReaderPool()
 )
