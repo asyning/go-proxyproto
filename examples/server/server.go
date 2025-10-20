@@ -4,6 +4,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"strings"
 
 	proxyproto "github.com/pires/go-proxyproto"
 )
@@ -34,9 +35,14 @@ func main() {
 		log.Fatal("couldn't retrieve remote address")
 	}
 	log.Printf("remote address: %q", conn.RemoteAddr().String())
-	bs, err := io.ReadAll(conn)
+
+	conn2 := conn.(*proxyproto.Conn)
+	bs, _ := conn2.Peek(3)
+	log.Printf("Peeked content: %s", string(bs))
+	var sb strings.Builder
+	_, err = io.Copy(&sb, conn2)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("content: %s", string(bs))
+	log.Printf("content: %s", sb.String())
 }
