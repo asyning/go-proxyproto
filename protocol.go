@@ -156,7 +156,7 @@ func NewConn(conn net.Conn, opts ...func(*Conn)) *Conn {
 	//const bufSize = 256
 	//br := bufio.NewReaderSize(conn, bufSize)
 
-	br := bufioReaderPool.Get(conn)
+	br := BufioReaderPool.Get(conn)
 
 	pConn := &Conn{
 		bufReader: br,
@@ -201,7 +201,7 @@ func (p *Conn) Write(b []byte) (int, error) {
 // Close wraps original conn.Close
 func (p *Conn) Close() error {
 	if p.bufReader != nil {
-		bufioReaderPool.Put(p.bufReader)
+		BufioReaderPool.Put(p.bufReader)
 		p.bufReader = nil
 	}
 	return p.conn.Close()
@@ -380,7 +380,7 @@ func (p *Conn) WriteTo(w io.Writer) (int64, error) {
 }
 
 var (
-	bufioReaderPool = newBufioReaderPool()
+	BufioReaderPool = newBufioReaderPool()
 )
 
 type bufioReaderPoolT struct {
