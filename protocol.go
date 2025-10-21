@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/gobwas/pool/pbufio"
 	"io"
 	"net"
 	"sync"
@@ -155,8 +156,7 @@ func NewConn(conn net.Conn, opts ...func(*Conn)) *Conn {
 	// We use 256 bytes to be safe.
 	//const bufSize = 256
 	//br := bufio.NewReaderSize(conn, bufSize)
-
-	br := BufioReaderPool.Get(conn)
+	br := pbufio.GetReader(conn, defaultBufSize)
 
 	pConn := &Conn{
 		bufReader: br,
@@ -201,7 +201,7 @@ func (p *Conn) Write(b []byte) (int, error) {
 // Close wraps original conn.Close
 func (p *Conn) Close() error {
 	if p.bufReader != nil {
-		BufioReaderPool.Put(p.bufReader)
+		pbufio.PutReader(p.bufReader)
 		p.bufReader = nil
 	}
 	return p.conn.Close()
@@ -379,30 +379,6 @@ func (p *Conn) WriteTo(w io.Writer) (int64, error) {
 	return p.bufReader.WriteTo(w)
 }
 
-var (
-	BufioReaderPool = newBufioReaderPool()
+const (
+	defaultBufSize = 4096
 )
-
-type bufioReaderPoolT struct {
-	bufferPool sync.Pool
-}
-
-func newBufioReaderPool() *bufioReaderPoolT {
-	return &bufioReaderPoolT{
-		bufferPool: sync.Pool{
-			New: func() any {
-				return bufio.NewReader(nil)
-			},
-		},
-	}
-}
-func (bf *bufioReaderPoolT) Get(r io.Reader) *bufio.Reader {
-	br := bf.bufferPool.Get().(*bufio.Reader)
-	br.Reset(r)
-	return br
-}
-
-func (bf *bufioReaderPoolT) Put(br *bufio.Reader) {
-	br.Reset(nil)
-	bf.bufferPool.Put(br)
-}
