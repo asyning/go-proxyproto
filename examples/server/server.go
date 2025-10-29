@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"syscall"
 
 	proxyproto "github.com/pires/go-proxyproto"
 )
@@ -24,7 +25,8 @@ func main() {
 	// Wait for a connection and accept it
 	conn, err := proxyListener.Accept()
 	defer conn.Close()
-
+	_, srcIsSyscall := conn.(syscall.Conn)
+	log.Printf("ok ? %v", srcIsSyscall)
 	// Print connection details
 	if conn.LocalAddr() == nil {
 		log.Fatal("couldn't retrieve local address")

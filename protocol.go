@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gobwas/pool/pbufio"
+	"github.com/gofrs/uuid/v5"
+	"github.com/puzpuzpuz/xsync/v4"
 	"io"
 	"net"
 	"sync"
@@ -48,15 +50,21 @@ type Listener struct {
 // return the address of the client instead of the proxy address. Each connection
 // will have its own readHeaderTimeout and readDeadline set by the Accept() call.
 type Conn struct {
-	readDeadline      atomic.Value // time.Time
-	once              sync.Once
-	readErr           error
-	conn              net.Conn
-	bufReader         *bufio.Reader
-	header            *Header
-	ProxyHeaderPolicy Policy
-	Validate          Validator
-	readHeaderTimeout time.Duration
+	readDeadline      atomic.Value  `json:"-"` // time.Time
+	once              sync.Once     `json:"-"`
+	readErr           error         `json:"-"`
+	conn              net.Conn      `json:"-"`
+	bufReader         *bufio.Reader `json:"-"`
+	header            *Header       `json:"-"`
+	ProxyHeaderPolicy Policy        `json:"-"`
+	Validate          Validator     `json:"-"`
+	readHeaderTimeout time.Duration `json:"-"`
+
+	UUID      uuid.UUID `json:"id"`
+	manager   *Manager  `json:"-"`
+	RemoteAdd string    `json:"remoteAdd"`
+	Start     time.Time `json:"start"`
+	Addr      string    `json:"Addr"`
 }
 
 // Validator receives a header and decides whether it is a valid one
@@ -126,6 +134,12 @@ func (p *Listener) Accept() (net.Conn, error) {
 			ValidateHeader(p.ValidateHeader),
 		)
 
+		newConn.Start = time.Now()
+		newConn.Addr = p.Listener.Addr().String()
+		newConn.manager = ConnectionManager
+		newConn.RemoteAdd = newConn.RemoteAddr().String()
+		newConn.UUID = NewUUIDV4()
+		ConnectionManager.Join(newConn)
 		// If the ReadHeaderTimeout for the listener is unset, use the default timeout.
 		if p.ReadHeaderTimeout == 0 {
 			p.ReadHeaderTimeout = DefaultReadHeaderTimeout
@@ -203,6 +217,9 @@ func (p *Conn) Close() error {
 	if p.bufReader != nil {
 		pbufio.PutReader(p.bufReader)
 		p.bufReader = nil
+	}
+	if p.manager != nil {
+		p.manager.Leave(p)
 	}
 	return p.conn.Close()
 }
@@ -378,7 +395,35 @@ func (p *Conn) WriteTo(w io.Writer) (int64, error) {
 	}
 	return p.bufReader.WriteTo(w)
 }
+func (p *Conn) ID() string {
+	return p.UUID.String()
+}
 
 const (
 	defaultBufSize = 4096
 )
+
+type Manager struct {
+	connections *xsync.Map[string, *Conn]
+}
+
+func (m *Manager) Join(c *Conn) {
+	m.connections.Store(c.ID(), c)
+}
+
+func (m *Manager) Leave(c *Conn) {
+	m.connections.Delete(c.ID())
+}
+
+func (m *Manager) Snapshot() []*Conn {
+	var connections []*Conn = make([]*Conn, 0)
+	m.connections.Range(func(key string, value *Conn) bool {
+		connections = append(connections, value)
+		return true
+	})
+	return connections
+}
+
+var ConnectionManager = &Manager{
+	connections: xsync.NewMap[string, *Conn](),
+}
