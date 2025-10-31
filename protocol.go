@@ -11,6 +11,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -24,6 +25,10 @@ var (
 	// ErrInvalidUpstream should be returned when an upstream connection address
 	// is not trusted, and therefore is invalid.
 	ErrInvalidUpstream = fmt.Errorf("proxyproto: upstream connection address not trusted for PROXY information")
+
+	PeekBufferNotEmpty = errors.New("peek buffer not empty")
+
+	NotSyscall = errors.New("underlying conn not syscall.Conn")
 )
 
 // Listener is used to wrap an underlying listener,
@@ -395,6 +400,45 @@ func (p *Conn) WriteTo(w io.Writer) (int64, error) {
 	}
 	return p.bufReader.WriteTo(w)
 }
+
+func (p *Conn) SyscallConn() (syscall.RawConn, error) {
+	if p.bufReader.Buffered() > 0 {
+		return nil, PeekBufferNotEmpty
+	}
+	if sc, ok := p.conn.(syscall.Conn); ok {
+		return sc.SyscallConn()
+	}
+	return nil, NotSyscall
+}
+
+func (p *Conn) FlushPeekedTo(w io.Writer) error {
+	for p.bufReader.Buffered() > 0 {
+		n := p.bufReader.Buffered()
+		data, err := p.bufReader.Peek(n)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+
+		written := 0
+		for written < len(data) {
+			wn, werr := w.Write(data[written:])
+			if werr != nil {
+				return werr
+			}
+			written += wn
+		}
+		_, _ = p.bufReader.Discard(n)
+	}
+	return nil
+}
+
+func (p *Conn) PrepareForCopy() {
+	p.bufReader.Reset(p.conn)
+}
+
 func (p *Conn) ID() string {
 	return p.UUID.String()
 }
