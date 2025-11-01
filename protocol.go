@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/gobwas/pool/pbufio"
 	"github.com/gofrs/uuid/v5"
 	"github.com/puzpuzpuz/xsync/v4"
 	"io"
@@ -175,7 +174,7 @@ func NewConn(conn net.Conn, opts ...func(*Conn)) *Conn {
 	// We use 256 bytes to be safe.
 	//const bufSize = 256
 	//br := bufio.NewReaderSize(conn, bufSize)
-	br := pbufio.GetReader(conn, defaultBufSize)
+	br := GetBufReader(conn)
 
 	pConn := &Conn{
 		bufReader: br,
@@ -219,9 +218,9 @@ func (p *Conn) Write(b []byte) (int, error) {
 
 // Close wraps original conn.Close
 func (p *Conn) Close() error {
-	if p.bufReader != nil {
-		pbufio.PutReader(p.bufReader)
+	if br := p.bufReader; br != nil {
 		p.bufReader = nil
+		PutBufReader(br)
 	}
 	if p.manager != nil {
 		p.manager.Leave(p)
