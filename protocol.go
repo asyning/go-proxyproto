@@ -141,7 +141,6 @@ func (p *Listener) Accept() (net.Conn, error) {
 		newConn.Start = time.Now()
 		newConn.Addr = p.Listener.Addr().String()
 		newConn.manager = ConnectionManager
-		newConn.RemoteAdd = newConn.RemoteAddr().String()
 		newConn.UUID = NewUUIDV4()
 		ConnectionManager.Join(newConn)
 		// If the ReadHeaderTimeout for the listener is unset, use the default timeout.
@@ -205,6 +204,7 @@ func (p *Conn) Peek(n int) ([]byte, error) {
 	p.once.Do(func() {
 		p.readErr = p.readHeader()
 	})
+	p.RemoteAdd = p.RemoteAddr().String()
 	if p.readErr != nil {
 		return nil, p.readErr
 	}
