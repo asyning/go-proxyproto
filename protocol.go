@@ -197,6 +197,9 @@ func (p *Conn) Read(b []byte) (int, error) {
 	if p.readErr != nil {
 		return 0, p.readErr
 	}
+	if p.bufReader == nil {
+		return 0, io.EOF
+	}
 	return p.bufReader.Read(b)
 }
 
