@@ -47,6 +47,7 @@ type Listener struct {
 	ConnPolicy        ConnPolicyFunc
 	ValidateHeader    Validator
 	ReadHeaderTimeout time.Duration
+	LimitChan         chan struct{}
 }
 
 // Conn is used to wrap and underlying connection which
@@ -69,6 +70,8 @@ type Conn struct {
 	RemoteAdd string    `json:"remoteAdd"`
 	Start     time.Time `json:"start"`
 	Addr      string    `json:"Addr"`
+	l         *Listener `json:"-"`
+	closeOnce sync.Once `json:"-"`
 }
 
 // Validator receives a header and decides whether it is a valid one
@@ -100,6 +103,17 @@ func (p *Listener) Accept() (net.Conn, error) {
 		conn, err := p.Listener.Accept()
 		if err != nil {
 			return nil, err
+		}
+
+		if p.LimitChan != nil {
+			select {
+			case p.LimitChan <- struct{}{}:
+			default:
+				{
+					conn.Close()
+					continue
+				}
+			}
 		}
 
 		proxyHeaderPolicy := USE
@@ -142,6 +156,7 @@ func (p *Listener) Accept() (net.Conn, error) {
 		newConn.Addr = p.Listener.Addr().String()
 		newConn.manager = ConnectionManager
 		newConn.UUID = NewUUIDV4()
+		newConn.l = p
 		ConnectionManager.Join(newConn)
 		// If the ReadHeaderTimeout for the listener is unset, use the default timeout.
 		if p.ReadHeaderTimeout == 0 {
@@ -221,13 +236,18 @@ func (p *Conn) Write(b []byte) (int, error) {
 
 // Close wraps original conn.Close
 func (p *Conn) Close() error {
-	if br := p.bufReader; br != nil {
-		p.bufReader = nil
-		PutBufReader(br)
-	}
-	if p.manager != nil {
-		p.manager.Leave(p)
-	}
+	p.closeOnce.Do(func() {
+		if p.l.LimitChan != nil {
+			<-p.l.LimitChan
+		}
+		if br := p.bufReader; br != nil {
+			p.bufReader = nil
+			PutBufReader(br)
+		}
+		if p.manager != nil {
+			p.manager.Leave(p)
+		}
+	})
 	return p.conn.Close()
 }
 
