@@ -493,3 +493,12 @@ func (m *Manager) Snapshot() []*Conn {
 var ConnectionManager = &Manager{
 	connections: xsync.NewMap[string, *Conn](),
 }
+
+func CloseConn(ids []string) {
+	for _, id := range ids {
+		v, ok := ConnectionManager.connections.Load(id)
+		if ok {
+			_ = v.Close()
+		}
+	}
+}
