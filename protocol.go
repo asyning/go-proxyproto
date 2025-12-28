@@ -420,9 +420,30 @@ func (p *Conn) WriteTo(w io.Writer) (int64, error) {
 	if p.readErr != nil {
 		return 0, p.readErr
 	}
-	return p.bufReader.WriteTo(w)
-}
 
+	b := make([]byte, p.bufReader.Buffered())
+	if _, err := p.bufReader.Read(b); err != nil {
+		return 0, err // this should never as we read buffered data
+	}
+
+	var n int64
+	{
+		nn, err := w.Write(b)
+		n += int64(nn)
+		if err != nil {
+			return n, err
+		}
+	}
+	{
+		nn, err := io.Copy(w, p.conn)
+		n += nn
+		if err != nil {
+			return n, err
+		}
+	}
+
+	return n, nil
+}
 func (p *Conn) SyscallConn() (syscall.RawConn, error) {
 	if p.bufReader.Buffered() > 0 {
 		return nil, PeekBufferNotEmpty
@@ -492,4 +513,13 @@ func (m *Manager) Snapshot() []*Conn {
 
 var ConnectionManager = &Manager{
 	connections: xsync.NewMap[string, *Conn](),
+}
+
+func CloseConn(ids []string) {
+	for _, id := range ids {
+		v, ok := ConnectionManager.connections.Load(id)
+		if ok {
+			_ = v.Close()
+		}
+	}
 }
