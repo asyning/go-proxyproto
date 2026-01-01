@@ -482,6 +482,17 @@ func (p *Conn) PrepareForCopy() {
 	p.bufReader.Reset(p.conn)
 }
 
+func (p *Conn) GetBufferReader() (*bufio.Reader, error) {
+	p.once.Do(func() {
+		p.readErr = p.readHeader()
+	})
+	p.RemoteAdd = p.RemoteAddr().String()
+	if p.readErr != nil {
+		return nil, p.readErr
+	}
+	return p.bufReader, nil
+}
+
 func (p *Conn) ID() string {
 	return p.UUID.String()
 }
